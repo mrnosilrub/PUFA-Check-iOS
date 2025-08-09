@@ -1,5 +1,5 @@
-// Entry shim for Snack: ensure a root-level App.js exists.
-import App from './App';
+// Entry shim for Snack: explicitly import the TypeScript App to avoid self-resolve
+import App from './App.tsx';
 export default App;
 
 
