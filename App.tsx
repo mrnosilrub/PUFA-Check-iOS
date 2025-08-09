@@ -243,7 +243,20 @@ return (
 <View style={{ flex: 1, backgroundColor: BG }}>
 <CameraView
 style={{ flex: 1 }}
-barcodeScannerSettings={{ /* default: all detectable types */ }}
+  facing="back"
+  barcodeScannerSettings={{
+    barcodeTypes: [
+      'ean13',
+      'ean8',
+      'upc_e',
+      'code39',
+      'code93',
+      'code128',
+      'itf14',
+      'qr',
+      'pdf417',
+    ],
+  }}
 onBarcodeScanned={(res) => {
 if (scanned) return;
 setScanned(true);
