@@ -240,10 +240,6 @@ onPressScan: () => void;
 recent: HistoryItem[];
 onOpenResult: (item: HistoryItem) => void;
 }) {
-  const isEnrichmentPending = useMemo(() => {
-    return (!!item.barcodeData && (!item.ingredients && (item.pufaFlag === 'unknown')));
-  }, [item.barcodeData, item.ingredients, item.pufaFlag]);
-
   return (
 <View style={styles.screen}>
 <View style={styles.card}>
@@ -346,6 +342,10 @@ case 'high': return 'High PUFA (seed oils likely)';
 default: return 'Analysis Pending';
 }
 }, [item.pufaFlag]);
+
+  const isEnrichmentPending = useMemo(() => {
+    return !!item.barcodeData && !item.ingredients && item.pufaFlag === 'unknown';
+  }, [item.barcodeData, item.ingredients, item.pufaFlag]);
 
 return (
 <View style={styles.screen}>
