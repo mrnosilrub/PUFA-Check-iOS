@@ -1,0 +1,25 @@
+// TODO: Provide your App Store Connect ascAppId or remove the submit section.
+{
+  "cli": {
+    "version": ">= 3.13.0"
+  },
+  "build": {
+    "preview": {
+      "ios": {
+        "image": "latest"
+      }
+    },
+    "production": {
+      "ios": {
+        "image": "latest"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "TODO: add App Store Connect ascAppId"
+      }
+    }
+  }
+}

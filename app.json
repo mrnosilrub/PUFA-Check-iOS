@@ -1,0 +1,23 @@
+// TODO: Set your unique bundle identifier (e.g., com.yourname.pufa-check) and EAS project ID.
+{
+  "expo": {
+    "name": "PUFA Check",
+    "slug": "pufa-check",
+    "version": "1.0.0",
+    "ios": {
+      "bundleIdentifier": "TODO: set your Bundle ID",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow PUFA Check to access your camera to scan food barcodes and check for seed oils"
+      }
+    },
+    "plugins": [
+      "expo-camera",
+      "expo-haptics"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "TODO: add EAS project ID"
+      }
+    }
+  }
+}
