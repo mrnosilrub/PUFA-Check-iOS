@@ -23,6 +23,7 @@ scannedAt: number;
 isFavorite?: boolean;
 pufaFlag?: 'unknown' | 'low' | 'medium' | 'high';
 ingredients?: string;
+  polyunsaturatedFatPer100g?: number;
 };
 
 const STORAGE_KEYS = {
@@ -45,19 +46,19 @@ setLoading(false);
 }
 }, []);
 
-const persist = useCallback(async (items: HistoryItem[]) => {
-setHistory(items);
-try {
-await AsyncStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(items));
-} catch (e) {
-console.warn('Failed to save history', e);
-}
-}, []);
+  const persist = useCallback(async (items: HistoryItem[]) => {
+    setHistory(items);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(items));
+    } catch (e) {
+      console.warn('Failed to save history', e);
+    }
+  }, []);
 
-const add = useCallback(async (item: HistoryItem) => {
-const items = [item, ...history].slice(0, 200);
-await persist(items);
-}, [history, persist]);
+  const add = useCallback(async (item: HistoryItem) => {
+    const items = [item, ...history].slice(0, 200);
+    await persist(items);
+  }, [history, persist]);
 
 const toggleFavorite = useCallback(async (id: string) => {
 const items = history.map(h => h.id === id ? { ...h, isFavorite: !h.isFavorite } : h);
@@ -69,16 +70,77 @@ const items = history.filter(h => h.id !== id);
 await persist(items);
 }, [history, persist]);
 
+  const update = useCallback(async (id: string, changes: Partial<HistoryItem>) => {
+    const items = history.map(h => h.id === id ? { ...h, ...changes } : h);
+    await persist(items);
+    return items.find(h => h.id === id);
+  }, [history, persist]);
+
 useEffect(() => { load(); }, [load]);
 
-return { history, loading, add, toggleFavorite, remove, reload: load };
+  return { history, loading, add, toggleFavorite, remove, update, reload: load };
 }
 
 export default function App() {
 const [tab, setTab] = useState<TabKey>('Home');
 const [stack, setStack] = useState<StackKey>('Root');
 const [result, setResult] = useState<HistoryItem | null>(null);
-const { history, loading, add, toggleFavorite } = useHistory();
+  const { history, loading, add, toggleFavorite, update } = useHistory();
+
+  const enrichItemWithOpenFoodFacts = useCallback(async (item: HistoryItem) => {
+    if (!item.barcodeData) return;
+    try {
+      const fields = [
+        'product_name',
+        'ingredients_text_en',
+        'ingredients_text',
+        'nutriments.polyunsaturated-fat_100g'
+      ].join(',');
+      const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(item.barcodeData)}.json?fields=${encodeURIComponent(fields)}`;
+      const res = await fetch(url);
+      const json = await res.json();
+      const product = json?.product;
+      if (!product) return;
+
+      const name: string | undefined = product.product_name;
+      const ingredientsText: string | undefined = product.ingredients_text_en || product.ingredients_text;
+      const polyFat: number | undefined = product?.nutriments?.['polyunsaturated-fat_100g'];
+
+      const pufaFlag = estimatePufaFlag(ingredientsText, polyFat);
+
+      const updated: Partial<HistoryItem> = {
+        name: name || item.name,
+        ingredients: ingredientsText || item.ingredients,
+        polyunsaturatedFatPer100g: typeof polyFat === 'number' ? polyFat : item.polyunsaturatedFatPer100g,
+        pufaFlag,
+      };
+      const newItem = await update(item.id, updated);
+      if (newItem && result && result.id === item.id) {
+        setResult(newItem);
+      }
+    } catch (e) {
+      console.warn('OpenFoodFacts lookup failed', e);
+    }
+  }, [result, update]);
+
+  function estimatePufaFlag(ingredientsText?: string, polyFatPer100g?: number): NonNullable<HistoryItem['pufaFlag']> {
+    const normalized = (ingredientsText || '').toLowerCase();
+    const seedOilKeywords = [
+      'canola', 'rapeseed', 'soybean', 'soy oil', 'corn oil', 'sunflower', 'safflower', 'cottonseed', 'grapeseed', 'rice bran', 'vegetable oil', 'mixed vegetable oils'
+    ];
+    const containsSeedOil = seedOilKeywords.some((k) => normalized.includes(k));
+
+    if (typeof polyFatPer100g === 'number') {
+      if (polyFatPer100g >= 10) return 'high';
+      if (polyFatPer100g >= 4) return 'medium';
+    }
+    if (containsSeedOil) return 'high';
+
+    if (normalized.includes('olive oil') || normalized.includes('butter') || normalized.includes('avocado oil')) {
+      return 'low';
+    }
+    return 'unknown';
+  }
 
 const goScan = useCallback(() => {
 setStack('Scan');
@@ -126,7 +188,7 @@ onBack={stack !== 'Root' ? back : undefined}
 
     {stack === 'Scan' && (
       <ScanScreen
-        onScanned={(barcode) => {
+        onScanned={async (barcode) => {
           const item: HistoryItem = {
             id: barcode.data || String(Date.now()),
             barcodeData: barcode.data,
@@ -134,8 +196,9 @@ onBack={stack !== 'Root' ? back : undefined}
             pufaFlag: 'unknown',
           };
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          add(item);
-          setTimeout(() => goResult(item), 50);
+          await add(item);
+          goResult(item);
+          enrichItemWithOpenFoodFacts(item);
         }}
       />
     )}
@@ -177,7 +240,11 @@ onPressScan: () => void;
 recent: HistoryItem[];
 onOpenResult: (item: HistoryItem) => void;
 }) {
-return (
+  const isEnrichmentPending = useMemo(() => {
+    return (!!item.barcodeData && (!item.ingredients && (item.pufaFlag === 'unknown')));
+  }, [item.barcodeData, item.ingredients, item.pufaFlag]);
+
+  return (
 <View style={styles.screen}>
 <View style={styles.card}>
 <Text style={styles.title}>PUFA Check</Text>
@@ -294,14 +361,16 @@ return (
 </View>
 <Text style={[styles.subtitle, { marginTop: 12 }]}>{flagText}</Text>
 <View style={[styles.section, { marginTop: 12 }]}>
-<Text style={styles.sectionTitle}>Ingredients</Text>
-<Text style={styles.bodyText}>{item.ingredients || 'Ingredients not available yet.'}</Text>
+        <Text style={styles.sectionTitle}>Ingredients</Text>
+        <Text style={styles.bodyText}>
+          {item.ingredients || (isEnrichmentPending ? 'Fetching product details…' : 'Ingredients not available.')}
+        </Text>
 </View>
 <View style={[styles.section, { marginTop: 12 }]}>
 <Text style={styles.sectionTitle}>Notes</Text>
-<Text style={styles.muted}>
-This is a minimal preview app. Connect to OpenFoodFacts/USDA to populate product data & PUFA estimates.
-</Text>
+        {isEnrichmentPending ? (
+          <Text style={styles.muted}>Looking up product in OpenFoodFacts…</Text>
+        ) : null}
 </View>
 </View>
 </View>
