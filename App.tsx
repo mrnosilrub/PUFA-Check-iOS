@@ -11,6 +11,10 @@ const BG = '#0A0E10';
 const BG_ELEV = '#12181B';
 const TEXT = '#E8F0F2';
 const MUTED = '#9AA5AB';
+const HTTP_HEADERS = {
+  Accept: 'application/json',
+  'User-Agent': 'PUFA-Check/0.1 (+https://example.com)'
+};
 
 type TabKey = 'Home' | 'History' | 'Settings';
 type StackKey = 'Root' | 'Scan' | 'Result';
@@ -140,10 +144,21 @@ const [result, setResult] = useState<HistoryItem | null>(null);
 
       let productData: ReturnType<typeof parseOffV2> | undefined;
       let sourceUsed: string | undefined;
+      // helper fetch with timeout
+      const fetchJsonWithTimeout = async (url: string, ms = 6000) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), ms);
+        try {
+          const res = await fetch(url, { headers: HTTP_HEADERS, signal: controller.signal as any });
+          return await res.json();
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      };
+
       for (const ep of endpoints) {
         try {
-          const res = await fetch(ep.url(item.barcodeData));
-          const json = await res.json();
+          const json = await fetchJsonWithTimeout(ep.url(item.barcodeData));
           const parsed = ep.parser(json);
           if (parsed) {
             productData = parsed;
