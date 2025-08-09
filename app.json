@@ -11,8 +11,7 @@
       }
     },
     "plugins": [
-      "expo-camera",
-      "expo-haptics"
+      "expo-camera"
     ],
     "extra": {
       "eas": {
