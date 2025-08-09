@@ -1,0 +1,22 @@
+// TODO: Add your App Store Connect App ID (ascAppId) under submit.production.ios.ascAppId when you create the App Store record
+{
+    "build": {
+    "preview": {
+    "ios": {
+    "image": "latest"
+    }
+    },
+    "production": {
+    "ios": {
+    "image": "latest"
+    }
+    }
+    },
+    "submit": {
+    "production": {
+    "ios": {
+    "ascAppId": ""
+    }
+    }
+    }
+    }

@@ -1,0 +1,30 @@
+// TODO: Set "extra.eas.projectId" to your EAS Project ID (from Expo project settings)
+{
+    "expo": {
+    "name": "PUFA Check",
+    "slug": "pufa-check",
+    "scheme": "pufacheck",
+    "sdkVersion": "53.0.0",
+    "platforms": [
+    "ios"
+    ],
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": [
+    "expo-camera",
+    "expo-haptics"
+    ],
+    "ios": {
+    "bundleIdentifier": "com.{yourname}.pufa-check",
+    "supportsTablet": true,
+    "infoPlist": {
+    "NSCameraUsageDescription": "PUFA Check uses the camera to scan product barcodes for quick product lookup and PUFA analysis."
+    }
+    },
+    "extra": {
+    "eas": {
+    "projectId": ""
+    }
+    }
+    }
+    }
