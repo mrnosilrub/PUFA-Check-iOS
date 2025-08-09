@@ -24,6 +24,7 @@ isFavorite?: boolean;
 pufaFlag?: 'unknown' | 'low' | 'medium' | 'high';
 ingredients?: string;
   polyunsaturatedFatPer100g?: number;
+  matchedSeedOils?: string[];
 };
 
 const STORAGE_KEYS = {
@@ -87,16 +88,11 @@ const [stack, setStack] = useState<StackKey>('Root');
 const [result, setResult] = useState<HistoryItem | null>(null);
   const { history, loading, add, toggleFavorite, update } = useHistory();
 
-  const enrichItemWithOpenFoodFacts = useCallback(async (item: HistoryItem) => {
+  const enrichItemWithOpenFoodFacts = useCallback(async (item: HistoryItem): Promise<HistoryItem | undefined> => {
     if (!item.barcodeData) return;
     try {
-      const fields = [
-        'product_name',
-        'ingredients_text_en',
-        'ingredients_text',
-        'nutriments.polyunsaturated-fat_100g'
-      ].join(',');
-      const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(item.barcodeData)}.json?fields=${encodeURIComponent(fields)}`;
+      // Use minimal field filter to avoid field path incompatibilities on some OFF mirrors
+      const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(item.barcodeData)}.json`;
       const res = await fetch(url);
       const json = await res.json();
       const product = json?.product;
@@ -106,40 +102,41 @@ const [result, setResult] = useState<HistoryItem | null>(null);
       const ingredientsText: string | undefined = product.ingredients_text_en || product.ingredients_text;
       const polyFat: number | undefined = product?.nutriments?.['polyunsaturated-fat_100g'];
 
-      const pufaFlag = estimatePufaFlag(ingredientsText, polyFat);
+      const analysis = analyzePufa(ingredientsText, polyFat);
 
       const updated: Partial<HistoryItem> = {
         name: name || item.name,
         ingredients: ingredientsText || item.ingredients,
         polyunsaturatedFatPer100g: typeof polyFat === 'number' ? polyFat : item.polyunsaturatedFatPer100g,
-        pufaFlag,
+        pufaFlag: analysis.flag,
+        matchedSeedOils: analysis.matchedSeedOils,
       };
       const newItem = await update(item.id, updated);
-      if (newItem && result && result.id === item.id) {
-        setResult(newItem);
-      }
+      if (newItem && result && result.id === item.id) setResult(newItem);
+      return newItem;
     } catch (e) {
       console.warn('OpenFoodFacts lookup failed', e);
     }
   }, [result, update]);
 
-  function estimatePufaFlag(ingredientsText?: string, polyFatPer100g?: number): NonNullable<HistoryItem['pufaFlag']> {
+  function analyzePufa(ingredientsText?: string, polyFatPer100g?: number): { flag: NonNullable<HistoryItem['pufaFlag']>; matchedSeedOils: string[] } {
     const normalized = (ingredientsText || '').toLowerCase();
     const seedOilKeywords = [
-      'canola', 'rapeseed', 'soybean', 'soy oil', 'corn oil', 'sunflower', 'safflower', 'cottonseed', 'grapeseed', 'rice bran', 'vegetable oil', 'mixed vegetable oils'
+      'canola oil', 'rapeseed oil', 'soybean oil', 'soy oil', 'corn oil', 'sunflower oil', 'safflower oil', 'cottonseed oil', 'grapeseed oil', 'rice bran oil', 'vegetable oil', 'mixed vegetable oils'
     ];
-    const containsSeedOil = seedOilKeywords.some((k) => normalized.includes(k));
+    const matchedSeedOils = seedOilKeywords.filter((k) => normalized.includes(k));
 
+    let flag: NonNullable<HistoryItem['pufaFlag']> = 'unknown';
     if (typeof polyFatPer100g === 'number') {
-      if (polyFatPer100g >= 10) return 'high';
-      if (polyFatPer100g >= 4) return 'medium';
+      if (polyFatPer100g >= 10) flag = 'high';
+      else if (polyFatPer100g >= 4) flag = 'medium';
+      else flag = matchedSeedOils.length > 0 ? 'high' : 'low';
+    } else if (matchedSeedOils.length > 0) {
+      flag = 'high';
+    } else if (normalized.includes('olive oil') || normalized.includes('butter') || normalized.includes('avocado oil')) {
+      flag = 'low';
     }
-    if (containsSeedOil) return 'high';
-
-    if (normalized.includes('olive oil') || normalized.includes('butter') || normalized.includes('avocado oil')) {
-      return 'low';
-    }
-    return 'unknown';
+    return { flag, matchedSeedOils };
   }
 
 const goScan = useCallback(() => {
@@ -197,8 +194,8 @@ onBack={stack !== 'Root' ? back : undefined}
           };
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           await add(item);
-          goResult(item);
-          enrichItemWithOpenFoodFacts(item);
+          const enriched = await enrichItemWithOpenFoodFacts(item);
+          goResult(enriched || item);
         }}
       />
     )}
@@ -367,7 +364,15 @@ return (
         </Text>
 </View>
 <View style={[styles.section, { marginTop: 12 }]}>
-<Text style={styles.sectionTitle}>Notes</Text>
+        <Text style={styles.sectionTitle}>Details</Text>
+        <Text style={styles.muted}>
+          {typeof item.polyunsaturatedFatPer100g === 'number'
+            ? `Polyunsaturated fat: ${item.polyunsaturatedFatPer100g.toFixed(1)} g / 100 g`
+            : 'Polyunsaturated fat: not available'}
+        </Text>
+        {item.matchedSeedOils && item.matchedSeedOils.length > 0 ? (
+          <Text style={styles.muted}>Seed oils: {item.matchedSeedOils.join(', ')}</Text>
+        ) : null}
         {isEnrichmentPending ? (
           <Text style={styles.muted}>Looking up product in OpenFoodFacts…</Text>
         ) : null}
