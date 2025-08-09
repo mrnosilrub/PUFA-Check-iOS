@@ -15,6 +15,13 @@ const MUTED = '#9AA5AB';
 type TabKey = 'Home' | 'History' | 'Settings';
 type StackKey = 'Root' | 'Scan' | 'Result';
 
+type UnitValue = { value?: number; unit?: string };
+function formatNutri(n: UnitValue | undefined, label: string): string {
+  if (!n || (n.value == null && !n.unit)) return `${label}: not available`;
+  const value = n.value != null ? (Number.isFinite(n.value) ? (n.value as number).toFixed(1) : String(n.value)) : '—';
+  return `${label}: ${value}${n.unit ? ' ' + n.unit : ''}`;
+}
+
 type HistoryItem = {
 id: string; // barcode or manual id
 name?: string;
@@ -25,6 +32,37 @@ pufaFlag?: 'unknown' | 'low' | 'medium' | 'high';
 ingredients?: string;
   polyunsaturatedFatPer100g?: number;
   matchedSeedOils?: string[];
+  nutriments?: {
+    energyKcal?: UnitValue;
+    fat?: UnitValue;
+    saturatedFat?: UnitValue;
+    monounsaturatedFat?: UnitValue;
+    polyunsaturatedFat?: UnitValue;
+    transFat?: UnitValue;
+    carbohydrates?: UnitValue;
+    sugars?: UnitValue;
+    fiber?: UnitValue;
+    proteins?: UnitValue;
+    salt?: UnitValue;
+    sodium?: UnitValue;
+    vitaminA?: UnitValue;
+    vitaminC?: UnitValue;
+    vitaminD?: UnitValue;
+    vitaminE?: UnitValue;
+    vitaminK?: UnitValue;
+    vitaminB1?: UnitValue;
+    vitaminB2?: UnitValue;
+    vitaminB3?: UnitValue;
+    vitaminB6?: UnitValue;
+    vitaminB12?: UnitValue;
+    calcium?: UnitValue;
+    iron?: UnitValue;
+    potassium?: UnitValue;
+    magnesium?: UnitValue;
+    zinc?: UnitValue;
+  };
+  lookupStatus?: 'pending' | 'found' | 'not_found' | 'error';
+  lookupSource?: string;
 };
 
 const STORAGE_KEYS = {
@@ -47,19 +85,19 @@ setLoading(false);
 }
 }, []);
 
-  const persist = useCallback(async (items: HistoryItem[]) => {
-    setHistory(items);
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(items));
-    } catch (e) {
-      console.warn('Failed to save history', e);
-    }
-  }, []);
+const persist = useCallback(async (items: HistoryItem[]) => {
+setHistory(items);
+try {
+await AsyncStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(items));
+} catch (e) {
+console.warn('Failed to save history', e);
+}
+}, []);
 
-  const add = useCallback(async (item: HistoryItem) => {
-    const items = [item, ...history].slice(0, 200);
-    await persist(items);
-  }, [history, persist]);
+const add = useCallback(async (item: HistoryItem) => {
+const items = [item, ...history].slice(0, 200);
+await persist(items);
+}, [history, persist]);
 
 const toggleFavorite = useCallback(async (id: string) => {
 const items = history.map(h => h.id === id ? { ...h, isFavorite: !h.isFavorite } : h);
@@ -75,7 +113,7 @@ await persist(items);
     const items = history.map(h => h.id === id ? { ...h, ...changes } : h);
     await persist(items);
     return items.find(h => h.id === id);
-  }, [history, persist]);
+}, [history, persist]);
 
 useEffect(() => { load(); }, [load]);
 
@@ -91,16 +129,39 @@ const [result, setResult] = useState<HistoryItem | null>(null);
   const enrichItemWithOpenFoodFacts = useCallback(async (item: HistoryItem): Promise<HistoryItem | undefined> => {
     if (!item.barcodeData) return;
     try {
-      // Use minimal field filter to avoid field path incompatibilities on some OFF mirrors
-      const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(item.barcodeData)}.json`;
-      const res = await fetch(url);
-      const json = await res.json();
-      const product = json?.product;
-      if (!product) return;
+      await update(item.id, { lookupStatus: 'pending' });
 
-      const name: string | undefined = product.product_name;
-      const ingredientsText: string | undefined = product.ingredients_text_en || product.ingredients_text;
-      const polyFat: number | undefined = product?.nutriments?.['polyunsaturated-fat_100g'];
+      const endpoints = [
+        { url: (code: string) => `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`, parser: parseOffV2, source: 'OFF v2 world' },
+        { url: (code: string) => `https://us.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`, parser: parseOffV2, source: 'OFF v2 us' },
+        { url: (code: string) => `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`, parser: parseOffV0, source: 'OFF v0 world' },
+        { url: (code: string) => `https://us.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`, parser: parseOffV0, source: 'OFF v0 us' },
+      ] as const;
+
+      let productData: ReturnType<typeof parseOffV2> | undefined;
+      let sourceUsed: string | undefined;
+      for (const ep of endpoints) {
+        try {
+          const res = await fetch(ep.url(item.barcodeData));
+          const json = await res.json();
+          const parsed = ep.parser(json);
+          if (parsed) {
+            productData = parsed;
+            sourceUsed = ep.source;
+            break;
+          }
+        } catch {}
+      }
+
+      if (!productData) {
+        const notFound = await update(item.id, { lookupStatus: 'not_found' });
+        if (notFound && result && result.id === item.id) setResult(notFound);
+        return notFound;
+      }
+
+      const name: string | undefined = productData.name;
+      const ingredientsText: string | undefined = productData.ingredientsText;
+      const polyFat: number | undefined = productData.polyFatPer100g;
 
       const analysis = analyzePufa(ingredientsText, polyFat);
 
@@ -110,14 +171,73 @@ const [result, setResult] = useState<HistoryItem | null>(null);
         polyunsaturatedFatPer100g: typeof polyFat === 'number' ? polyFat : item.polyunsaturatedFatPer100g,
         pufaFlag: analysis.flag,
         matchedSeedOils: analysis.matchedSeedOils,
+        lookupStatus: 'found',
+        lookupSource: sourceUsed,
       };
       const newItem = await update(item.id, updated);
       if (newItem && result && result.id === item.id) setResult(newItem);
       return newItem;
     } catch (e) {
       console.warn('OpenFoodFacts lookup failed', e);
+      const errored = await update(item.id, { lookupStatus: 'error' });
+      if (errored && result && result.id === item.id) setResult(errored);
+      return errored;
     }
   }, [result, update]);
+
+  function parseOffV2(json: any): { name?: string; ingredientsText?: string; polyFatPer100g?: number; nutriments?: HistoryItem['nutriments'] } | undefined {
+    const product = json?.product;
+    if (!product) return undefined;
+    return {
+      name: product.product_name,
+      ingredientsText: product.ingredients_text_en || product.ingredients_text,
+      polyFatPer100g: product?.nutriments?.['polyunsaturated-fat_100g'],
+      nutriments: mapBasicNutriments(product?.nutriments),
+    };
+  }
+
+  function parseOffV0(json: any): { name?: string; ingredientsText?: string; polyFatPer100g?: number; nutriments?: HistoryItem['nutriments'] } | undefined {
+    const status = json?.status;
+    const product = json?.product;
+    if (!product || status !== 1) return undefined;
+    return {
+      name: product.product_name,
+      ingredientsText: product.ingredients_text_en || product.ingredients_text,
+      polyFatPer100g: product?.nutriments?.['polyunsaturated-fat_100g'],
+      nutriments: mapBasicNutriments(product?.nutriments),
+    };
+  }
+
+  function mapBasicNutriments(off: any | undefined): HistoryItem['nutriments'] | undefined {
+    if (!off) return undefined;
+    const pick = (key: string): { value?: number; unit?: string } | undefined => {
+      const value = typeof off?.[`${key}_100g`] === 'number' ? off?.[`${key}_100g`] : undefined;
+      const unit = typeof off?.[`${key}_unit`] === 'string' ? off?.[`${key}_unit`] : undefined;
+      if (value == null && unit == null) return undefined;
+      return { value, unit };
+    };
+    const energyKcal = (() => {
+      const kcal = typeof off?.['energy-kcal_100g'] === 'number' ? off?.['energy-kcal_100g'] : undefined;
+      const kj = typeof off?.['energy-kj_100g'] === 'number' ? off?.['energy-kj_100g'] : undefined;
+      const value = kcal != null ? kcal : (kj != null ? (kj / 4.184) : undefined);
+      if (value == null) return undefined;
+      return { value, unit: 'kcal' };
+    })();
+    return {
+      energyKcal,
+      fat: pick('fat'),
+      saturatedFat: pick('saturated-fat'),
+      monounsaturatedFat: pick('monounsaturated-fat'),
+      polyunsaturatedFat: pick('polyunsaturated-fat'),
+      transFat: pick('trans-fat'),
+      carbohydrates: pick('carbohydrates'),
+      sugars: pick('sugars'),
+      fiber: pick('fiber'),
+      proteins: pick('proteins'),
+      salt: pick('salt'),
+      sodium: pick('sodium'),
+    };
+  }
 
   function analyzePufa(ingredientsText?: string, polyFatPer100g?: number): { flag: NonNullable<HistoryItem['pufaFlag']>; matchedSeedOils: string[] } {
     const normalized = (ingredientsText || '').toLowerCase();
@@ -137,6 +257,12 @@ const [result, setResult] = useState<HistoryItem | null>(null);
       flag = 'low';
     }
     return { flag, matchedSeedOils };
+  }
+
+  function formatNutri(n: HistoryItem['nutriments'] extends infer T ? T extends object ? any : any : any, label: string): string {
+    if (!n || (n.value == null && !n.unit)) return `${label}: not available`;
+    const value = n.value != null ? (Number.isFinite(n.value) ? n.value.toFixed(1) : String(n.value)) : '—';
+    return `${label}: ${value}${n.unit ? ' ' + n.unit : ''}`;
   }
 
 const goScan = useCallback(() => {
@@ -191,6 +317,7 @@ onBack={stack !== 'Root' ? back : undefined}
             barcodeData: barcode.data,
             scannedAt: Date.now(),
             pufaFlag: 'unknown',
+            lookupStatus: 'pending',
           };
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           await add(item);
@@ -237,7 +364,7 @@ onPressScan: () => void;
 recent: HistoryItem[];
 onOpenResult: (item: HistoryItem) => void;
 }) {
-  return (
+return (
 <View style={styles.screen}>
 <View style={styles.card}>
 <Text style={styles.title}>PUFA Check</Text>
@@ -358,25 +485,45 @@ return (
 </View>
 <Text style={[styles.subtitle, { marginTop: 12 }]}>{flagText}</Text>
 <View style={[styles.section, { marginTop: 12 }]}>
-        <Text style={styles.sectionTitle}>Ingredients</Text>
+<Text style={styles.sectionTitle}>Ingredients</Text>
         <Text style={styles.bodyText}>
           {item.ingredients || (isEnrichmentPending ? 'Fetching product details…' : 'Ingredients not available.')}
         </Text>
 </View>
 <View style={[styles.section, { marginTop: 12 }]}>
-        <Text style={styles.sectionTitle}>Details</Text>
-        <Text style={styles.muted}>
-          {typeof item.polyunsaturatedFatPer100g === 'number'
-            ? `Polyunsaturated fat: ${item.polyunsaturatedFatPer100g.toFixed(1)} g / 100 g`
-            : 'Polyunsaturated fat: not available'}
-        </Text>
-        {item.matchedSeedOils && item.matchedSeedOils.length > 0 ? (
-          <Text style={styles.muted}>Seed oils: {item.matchedSeedOils.join(', ')}</Text>
-        ) : null}
-        {isEnrichmentPending ? (
-          <Text style={styles.muted}>Looking up product in OpenFoodFacts…</Text>
-        ) : null}
+  <Text style={styles.sectionTitle}>Macronutrients (per 100 g)</Text>
+  <Text style={styles.muted}>
+    {formatNutri(item.nutriments?.energyKcal, 'Energy')}
+  </Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.fat, 'Fat')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.saturatedFat, 'Saturated fat')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.monounsaturatedFat, 'Monounsaturated fat')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.polyunsaturatedFat, 'Polyunsaturated fat')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.transFat, 'Trans fat')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.carbohydrates, 'Carbohydrates')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.sugars, 'Sugars')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.fiber, 'Fiber')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.proteins, 'Protein')}</Text>
 </View>
+
+<View style={[styles.section, { marginTop: 12 }]}>
+  <Text style={styles.sectionTitle}>Sodium</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.salt, 'Salt')}</Text>
+  <Text style={styles.muted}>{formatNutri(item.nutriments?.sodium, 'Sodium')}</Text>
+</View>
+
+{item.matchedSeedOils && item.matchedSeedOils.length > 0 ? (
+  <View style={[styles.section, { marginTop: 12 }]}>
+    <Text style={styles.sectionTitle}>Seed oils detected</Text>
+    <Text style={styles.muted}>{item.matchedSeedOils.join(', ')}</Text>
+  </View>
+) : null}
+
+{isEnrichmentPending ? (
+  <View style={[styles.section, { marginTop: 12 }]}>
+    <Text style={styles.muted}>Looking up product in OpenFoodFacts…</Text>
+  </View>
+) : null}
 </View>
 </View>
 );
