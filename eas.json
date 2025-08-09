@@ -1,4 +1,3 @@
-// TODO: Provide your App Store Connect ascAppId or remove the submit section.
 {
   "cli": {
     "version": ">= 3.13.0"

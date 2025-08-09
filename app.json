@@ -1,4 +1,3 @@
-// TODO: Set your unique bundle identifier (e.g., com.yourname.pufa-check) and EAS project ID.
 {
   "expo": {
     "name": "PUFA Check",
@@ -11,8 +10,7 @@
       }
     },
     "plugins": [
-      "expo-camera",
-      "expo-haptics"
+      "expo-camera"
     ],
     "extra": {
       "eas": {
