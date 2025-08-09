@@ -1,0 +1,29 @@
+# Files and directories Snack should ignore during import
+node_modules
+.git
+.expo
+.expo-shared
+.DS_Store
+
+# Native and build outputs
+android
+ios
+web-build
+dist
+build
+
+# Large lockfiles and config not needed for Snack
+package-lock.json
+yarn.lock
+eas.json
+
+# Credentials and binaries (just in case)
+*.ipa
+*.aab
+*.apk
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+
+
