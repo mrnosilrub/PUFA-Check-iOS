@@ -13,6 +13,7 @@ const TEXT = '#E8F0F2';
 const MUTED = '#9AA5AB';
 const HTTP_HEADERS = {
   Accept: 'application/json',
+  'Accept-Language': 'en',
   'User-Agent': 'PUFA-Check/0.1 (+https://example.com)'
 };
 
@@ -188,6 +189,7 @@ const [result, setResult] = useState<HistoryItem | null>(null);
         matchedSeedOils: analysis.matchedSeedOils,
         lookupStatus: 'found',
         lookupSource: sourceUsed,
+        nutriments: productData.nutriments || item.nutriments,
       };
       const newItem = await update(item.id, updated);
       if (newItem && result && result.id === item.id) setResult(newItem);
@@ -201,26 +203,30 @@ const [result, setResult] = useState<HistoryItem | null>(null);
   }, [result, update]);
 
   function parseOffV2(json: any): { name?: string; ingredientsText?: string; polyFatPer100g?: number; nutriments?: HistoryItem['nutriments'] } | undefined {
+    const status = json?.status;
+    if (status === 0) return undefined;
     const product = json?.product;
     if (!product) return undefined;
-    return {
-      name: product.product_name,
-      ingredientsText: product.ingredients_text_en || product.ingredients_text,
-      polyFatPer100g: product?.nutriments?.['polyunsaturated-fat_100g'],
-      nutriments: mapBasicNutriments(product?.nutriments),
-    };
+    const name: string | undefined = product.product_name;
+    const ingredientsText: string | undefined = product.ingredients_text_en || product.ingredients_text;
+    const nutriments = mapBasicNutriments(product?.nutriments);
+    const polyFatPer100g: number | undefined = product?.nutriments?.['polyunsaturated-fat_100g'];
+    const hasData = !!(name || ingredientsText || (nutriments && Object.keys(nutriments).length > 0));
+    if (!hasData) return undefined;
+    return { name, ingredientsText, polyFatPer100g, nutriments };
   }
 
   function parseOffV0(json: any): { name?: string; ingredientsText?: string; polyFatPer100g?: number; nutriments?: HistoryItem['nutriments'] } | undefined {
     const status = json?.status;
     const product = json?.product;
     if (!product || status !== 1) return undefined;
-    return {
-      name: product.product_name,
-      ingredientsText: product.ingredients_text_en || product.ingredients_text,
-      polyFatPer100g: product?.nutriments?.['polyunsaturated-fat_100g'],
-      nutriments: mapBasicNutriments(product?.nutriments),
-    };
+    const name: string | undefined = product.product_name;
+    const ingredientsText: string | undefined = product.ingredients_text_en || product.ingredients_text;
+    const nutriments = mapBasicNutriments(product?.nutriments);
+    const polyFatPer100g: number | undefined = product?.nutriments?.['polyunsaturated-fat_100g'];
+    const hasData = !!(name || ingredientsText || (nutriments && Object.keys(nutriments).length > 0));
+    if (!hasData) return undefined;
+    return { name, ingredientsText, polyFatPer100g, nutriments };
   }
 
   function mapBasicNutriments(off: any | undefined): HistoryItem['nutriments'] | undefined {
