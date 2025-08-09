@@ -1,0 +1,41 @@
+# Node / Expo
+node_modules
+.expo
+.expo-shared
+dist
+web-build
+build
+android
+ios
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+
+# Expo/EAS cache
+.expo/*
+*/.cache/
+.easl
+eas-build-local.json
+
+# Locks (not needed for Snack)
+package-lock.json
+yarn.lock
+
+# TypeScript (if added later)
+*.tsbuildinfo
+
+# Credentials and binaries
+*.ipa
+*.aab
+*.apk
+*.keystore
+*.p8
+*.p12
+*.mobileprovision
+
+
